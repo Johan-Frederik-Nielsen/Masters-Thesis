@@ -46,7 +46,7 @@ if __name__ == '__main__':
     plt.legend(["p", "q", "particles"])
     plt.show()
 
-    n_iterations = 500
+    n_iterations = 50_000
 
 
     def step_size(iteration):
@@ -56,7 +56,8 @@ if __name__ == '__main__':
 
     phinorms = np.zeros((n_iterations, 1))
 
-    for l in (pbar := tqdm(range(n_iterations))):
+    pbar = tqdm(range(n_iterations))
+    for l in pbar:
         t = time.time()
         # x_ntimes[i,j]=x_j
         x_ntimes = torch.matmul(torch.ones([n])[:, None], torch.transpose(x, 0, 1))
