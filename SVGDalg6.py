@@ -13,11 +13,13 @@ mix=torch.distributions.categorical.Categorical(torch.tensor([0.3, 0.7]))
 comp=torch.distributions.normal.Normal(torch.tensor([-2.5, 1.5]), torch.tensor([1, 1]))    
 dist_p=torch.distributions.mixture_same_family.MixtureSameFamily(mix,comp)
 """
-if __name__ == '__main__':
+if __name__ == "__main__":
     dist_q = torch.distributions.normal.Normal(torch.tensor([-10.0]), torch.tensor([1]))
 
     mix = torch.distributions.categorical.Categorical(torch.tensor([1 / 3, 0.7]))
-    comp = torch.distributions.normal.Normal(torch.tensor([-2, 2]), torch.tensor([1, 1]))
+    comp = torch.distributions.normal.Normal(
+        torch.tensor([-2, 2]), torch.tensor([1, 1])
+    )
     dist_p = torch.distributions.mixture_same_family.MixtureSameFamily(mix, comp)
 
     # torch.tensor(np.linspace(-5,5,100))
@@ -48,11 +50,9 @@ if __name__ == '__main__':
 
     n_iterations = 50_000
 
-
     def step_size(iteration):
         # return 0.25
         return 0.001 * 50 ** (-iteration / n_iterations + 1)
-
 
     phinorms = np.zeros((n_iterations, 1))
 
@@ -68,7 +68,7 @@ if __name__ == '__main__':
             torch.median(
                 torch.sort(
                     torch.flatten(torch.flatten(torch.triu(torch.abs(x_difference))))
-                )[0][int((n ** 2 + n) / 2):]
+                )[0][int((n**2 + n) / 2) :]
             )
         ) ** 2 / np.log(n)
         # k[i,j]=k(x_j,x_i)
@@ -81,21 +81,21 @@ if __name__ == '__main__':
         q = torch.exp(dist_q.log_prob(x_ntimes))
         # grad_p[i,j]=\nabla_x p(x_j)
         grad_p = (
-                         0.3
-                         / (np.sqrt(2 * np.pi))
-                         * (-x_ntimes - 2.5)
-                         * torch.exp(-torch.pow(x_ntimes + 2.5, 2) / 2)
-                         + 0.7
-                         / (np.sqrt(2 * np.pi))
-                         * (-x_ntimes + 1.5)
-                         * torch.exp(-torch.pow(x_ntimes - 1.5, 2) / 2)
-                 ) * torch.pow(p, -1)
+            0.3
+            / (np.sqrt(2 * np.pi))
+            * (-x_ntimes - 2.5)
+            * torch.exp(-torch.pow(x_ntimes + 2.5, 2) / 2)
+            + 0.7
+            / (np.sqrt(2 * np.pi))
+            * (-x_ntimes + 1.5)
+            * torch.exp(-torch.pow(x_ntimes - 1.5, 2) / 2)
+        ) * torch.pow(p, -1)
         phi_summand = (
-                1
-                / n
-                * (grad_p * k + grad_k)
-                * torch.pow(q, alpha - 1)
-                * torch.pow(p, 1 - alpha)
+            1
+            / n
+            * (grad_p * k + grad_k)
+            * torch.pow(q, alpha - 1)
+            * torch.pow(p, 1 - alpha)
         )
         # phi
         phi = torch.sum(phi_summand, dim=1)[:, None]
