@@ -83,48 +83,29 @@ def old_step(theta, state_sum):
 
 
 def kernel_value_grad(particles):
-    sq_dist = torch.linalg.norm(particles[None, :] - particles[:, None], dim=-1)
+    diff = particles[None, :] - particles[:, None]
+    sq_dist = torch.linalg.norm(diff, dim=-1)
     h = torch.median(sq_dist) ** 2 / np.log(n_particles)
     value = torch.exp(-1.0 / h * sq_dist ** 2)
 
-    grad = -2.0 / h * (particles[None, :] - particles[:, None]) * value[..., None]
-    return h, value, grad
+    grad = -2.0 / h * diff * value[..., None]
+    return h, value.sum(1), grad.sum(1)
 
 
 def step(particles, state_sum):
     h, k, grad_k = kernel_value_grad(particles)
-    if debug:
-        theta_ntimes = particles[None, :, :].repeat(n_particles, 1, 1)
-        # theta_difference[i,j,:]=theta[j,:]-theta[i,:]
-        theta_difference = (theta_ntimes - torch.transpose(theta_ntimes, 0, 1))
-        # h
 
-        h_old = float(torch.median(
-            torch.sort(
-                torch.flatten(torch.flatten(torch.triu(torch.pow(torch.sum(torch.pow(theta_difference, 2), 2), 0.5)))))[
-                0][
-            int((n_particles ** 2 + n_particles) / 2):])) ** 2 / np.log(n_particles)
-        # k[i,j]=k(x_j,x_i)
-        k_old = torch.exp(-1.0 / h * torch.sum(torch.pow(theta_difference, 2), 2))
-        grad_k_old = (-1.0 / h * 2.0 * theta_difference * k[:, :, None])
+    exp_mat = torch.exp(-torch.matmul(data, particles.T))
+    grad_p0 = - 1 / (exp_mat + 1)
 
-        assert torch.allclose(k_old, k)
-        assert torch.allclose(grad_k_old, grad_k)
+    grad_p = grad_p0 + obs[:, None]
+    grad_p = torch.matmul(grad_p.T, data) - particles
 
-    # grad_p1=-theta
-    grad_p1 = (1 / (1 + torch.exp(torch.matmul(data, particles.T))))
-    grad_p0 = -(1 / (1 + torch.exp(-torch.matmul(data, particles.T))))
-
-    grad_p = data[..., None] * (grad_p0 - (grad_p0 + grad_p1) * obs[:, None])[:, None, :]
-    grad_p = torch.sum(grad_p, 0).T - particles
-
-    phi = (1 / n_particles * (grad_p[:, None, :] * k[:, :, None] + grad_k)).sum(1)
-
+    phi = 1 / n_particles * (grad_p * k[:, None] + grad_k)
     state_sum = state_sum + phi ** 2
-    epsilon = 0.00001 * phi * state_sum.sqrt()
 
-    if torch.any(torch.isnan(torch.exp(torch.matmul(particles, torch.transpose(data, 0, 1))))):
-        raise ValueError('NaN in particles.')
+    epsilon = 0.00001 * phi * state_sum ** 0.5
+
     particles = particles + epsilon
     return particles, state_sum
 
