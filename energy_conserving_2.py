@@ -24,10 +24,10 @@ def load_data():
         x, y = map(lambda data: torch.tensor(np.array(data)), fetch())
         xs.append(x)
         ys.append(y)
-
+    
     return torch.concat(xs, 0), torch.concat(ys, 0)
 
-
+"""
 def old_step(theta, state_sum):
     # theta_ntimes[i,j,:]=theta[j,:]
     theta_ntimes = theta[None, :, :].repeat(n_particles, 1, 1)
@@ -131,7 +131,7 @@ def old_step(theta, state_sum):
         # print(test_tensor)
     theta = theta + epsilon
     return theta, state_sum
-
+"""
 
 def kernel_value_grad(particles):
     diff = particles[None, :] - particles[:, None]
@@ -145,32 +145,34 @@ def kernel_value_grad(particles):
 
 def step(particles, state_sum):
     h, k, grad_k = kernel_value_grad(particles)
-
+    
+    """ This seems like a miscalculation of grad_p
     exp_mat = torch.exp(-torch.matmul(data, particles.T))
     grad_p0 = -1 / (exp_mat + 1)
 
     grad_p = grad_p0 + obs[:, None]
     grad_p = torch.matmul(grad_p.T, data) - particles
+    print("Size test 0: ",torch.Tensor.size(grad_p))
+    """
     
+    # Size of the following 3 tensors are all [n_data,28,n_particles]
+    exp_mat = torch.exp(torch.matmul(data, particles.T))[:,None,:].repeat(1,28,1)
+    x_k=data[:,:,None].repeat(1,1,n_particles)
+    y_k=obs[:,None,None].repeat(1,28,n_particles)
+    
+
+    grad_p=-y_k*(-x_k*torch.pow(exp_mat,-1))/(1+torch.pow(exp_mat,-1))+(y_k-1)*(x_k*torch.pow(exp_mat,1))/(1+torch.pow(exp_mat,1))
+
+    grad_p=torch.sum(grad_p,0)-1
+    grad_p=torch.transpose(grad_p,0,1)
     
     alpha=0.5
-    p_current = torch.pow(
-        1 + torch.exp(-torch.matmul(particles, torch.transpose(data, 0, 1))),
-        -(obs[None, :].repeat(n_particles, 1)),
-        ) * torch.pow(
-        1 + torch.exp(torch.matmul(particles, torch.transpose(data, 0, 1))),
-        (obs[None, :].repeat(n_particles, 1)) - 1,
-        )
-    p_current=torch.sum(torch.log(p_current), 1) + torch.log(torch.exp(dist_q.log_prob(particles)))
-    #p_current=torch.pow(p_current,(alpha-1))
-    
-    #phi_weight=torch.pow(dist_q.log_prob(particles),(alpha-1))-p_current
-    phi_weight=dist_q.log_prob(particles)-p_current
-    phi_weight=phi_weight[:,None].repeat(1,28)
-    phi_weight=phi_weight/torch.mean(phi_weight)
-    phi_weight=torch.ones((n_particles,28))
-    #print("SIZE HERE: ",phi_weight)
-    phi = 1 / n_particles * (grad_p * k[:, None] + grad_k)*torch.pow(phi_weight,alpha-1)
+
+    logqp=-y_k*torch.log(1+torch.pow(exp_mat,-1))+(y_k-1)*torch.log(1+exp_mat)
+    logqp=torch.sum(logqp,0)-torch.transpose(particles,0,1)
+    logqp=torch.transpose(logqp,0,1)
+
+    phi = 1 / n_particles * (grad_p * k[:, None] + grad_k)*torch.pow(torch.abs(logqp),alpha-1)/torch.mean(torch.pow(torch.abs(logqp),alpha-1))
     state_sum = state_sum + phi**2
 
     epsilon = 0.00001 * phi * state_sum**0.5
@@ -178,7 +180,7 @@ def step(particles, state_sum):
     particles = particles + epsilon
     return particles, state_sum
 
-
+"""
 def kl(particles, data, obs, dist_q):
     p_current = torch.pow(
         1 + torch.exp(-torch.matmul(particles, torch.transpose(data, 0, 1))),
@@ -198,14 +200,14 @@ def kl(particles, data, obs, dist_q):
     )
     #print(p_current,torch.log(p_current))
     return kl
-
+"""
 
 if __name__ == "__main__":
     n_particles = 100
 
     data, obs = load_data()
     n_data, n_feats = data.shape
-
+    #print(torch.Tensor.size(data),torch.Tensor.size(obs))
     dist_q = Normal(0, 1.0).expand((n_feats,)).to_event(1)
 
     particles = dist_q.sample((n_particles,))
@@ -224,31 +226,16 @@ if __name__ == "__main__":
     particles, state_sum = step(particles, state_sum)
     if debug:
         assert torch.allclose(state_sum, old_state_sum)
-    kl_init = kl(particles, data, obs, dist_q)
+    #kl_init = kl(particles, data, obs, dist_q)
     for l in tqdm.tqdm(range(n_iterations - 1)):
         particles, state_sum = step(particles, state_sum)
-        p_current = torch.pow(
-        1 + torch.exp(-torch.matmul(particles, torch.transpose(data, 0, 1))),
-        -(obs[None, :].repeat(n_particles, 1)),
-        ) * torch.pow(
-        1 + torch.exp(torch.matmul(particles, torch.transpose(data, 0, 1))),
-        (obs[None, :].repeat(n_particles, 1)) - 1,
-        )
-        #print(particles)
-        p_current=torch.sum(torch.log(p_current), 1) + torch.log(torch.exp(dist_q.log_prob(particles)))
-        
-        #print(torch.Tensor.size(p_current),p_current,torch.log(torch.exp(dist_q.log_prob(particles))))
-        #print(torch.min(p_current),torch.max(p_current),torch.exp(torch.max(p_current)-torch.min(p_current)))
-        interesting_thing=torch.log(torch.exp(dist_q.log_prob(particles)))-p_current
-        #print(interesting_thing,torch.var(interesting_thing)**0.5)
-        #print(particles)
-    kl_final = kl(particles, data, obs, dist_q)
+        exp_mat = torch.exp(torch.matmul(data, particles.T))[:,None,:].repeat(1,28,1)
+        x_k=data[:,:,None].repeat(1,1,n_particles)
+        y_k=obs[:,None,None].repeat(1,28,n_particles)
+        grad_p=-y_k*(-x_k*torch.pow(exp_mat,-1))/(1+torch.pow(exp_mat,-1))+(y_k-1)*(x_k*torch.pow(exp_mat,1))/(1+torch.pow(exp_mat,1))        
+
+    #kl_final = kl(particles, data, obs, dist_q)
     kde=scipy.stats.gaussian_kde(np.array(torch.transpose(particles,0,1)))
-    print(np.array(torch.transpose(particles,0,1)).shape)
-    #print(kde.pdf(torch.transpose(particles,0,1)))
-    print(torch.Tensor.size(p_current),np.log(kde.pdf(torch.transpose(particles,0,1))).shape)
-    print(np.sum(kde.pdf(torch.transpose(particles,0,1))*(np.log(kde.pdf(torch.transpose(particles,0,1)))-np.array(p_current))))
-    print("KL before: ",kl_init)
-    print("KL after: ",kl_final)
-    #print(particles)
-    print(torch.mean(p_current),torch.var(particles))
+    q=kde.pdf(torch.transpose(particles,0,1))
+    print("KL estimate: ",np.sum(q*(np.log(q)-np.array(grad_p))))
+
